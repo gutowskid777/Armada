@@ -6,7 +6,7 @@ final class Settings: ObservableObject {
     static let shared = Settings()
 
     enum Hotkey: String, CaseIterable, Identifiable {
-        case cmdSpace, optSpace, ctrlSpace, cmdShiftSpace
+        case cmdSpace, optSpace, ctrlSpace, cmdShiftSpace, optCmdSpace
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -14,6 +14,7 @@ final class Settings: ObservableObject {
             case .optSpace: return "⌥ Space"
             case .ctrlSpace: return "⌃ Space"
             case .cmdShiftSpace: return "⌘⇧ Space"
+            case .optCmdSpace: return "⌥⌘ Space"
             }
         }
     }
