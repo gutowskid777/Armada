@@ -48,6 +48,7 @@ final class HotKeyCenter {
         case .optSpace: return UInt32(optionKey)
         case .ctrlSpace: return UInt32(controlKey)
         case .cmdShiftSpace: return UInt32(cmdKey | shiftKey)
+        case .optCmdSpace: return UInt32(optionKey | cmdKey)
         }
     }
 
