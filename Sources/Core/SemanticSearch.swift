@@ -7,7 +7,7 @@ struct SearchResult: Identifiable, Hashable {
     var prior: Double          // score before the final rerank (walker mass / name match)
     var sources: Set<Source>
 
-    enum Source: String { case name, walk, content, app, setting, action, site, web, recent }
+    enum Source: String { case name, walk, content, app, setting, action, site, web, recent, exact }
     var id: String { entry.id }
     // Score is part of equality so SwiftUI re-renders a row whose rank changed but whose file didn't.
     static func == (a: SearchResult, b: SearchResult) -> Bool { a.entry == b.entry && a.score == b.score && a.prior == b.prior }
@@ -77,7 +77,13 @@ final class SemanticSearch {
             return hits
         }
         var results: [String: SearchResult] = [:]
-        await onUpdate([], .names)
+        // 0. Exact hits (2026-10-07): a typed path ("brain/goals.md") or a bare file name ("goals.md", "goals") is
+        //    what the user means. They show first, before anything else lands, and stay pinned through the rerank.
+        let exactHits = Spotlight.exactMatches(query: q, roots: options.roots)
+        for (p, s) in exactHits {
+            if let e = FileSystem.entry(for: URL(fileURLWithPath: p)) { results[p] = SearchResult(entry: e, score: s, prior: s, sources: [.exact]) }
+        }
+        await onUpdate(Array(results.values).sorted { $0.score > $1.score }, .names)
         // Name hits are usually back within ~150 ms; show them before the first Jev answer lands.
         let quickNames = await withTaskGroup(of: [String: Double]?.self) { group -> [String: Double]? in
             group.addTask { await nameTask.value }
@@ -169,7 +175,8 @@ final class SemanticSearch {
                 guard let p = probs[r.entry.path] else { continue }
                 _ = r.sources
                 let exact = r.entry.name.lowercased() == q.lowercased() || r.entry.url.deletingPathExtension().lastPathComponent.lowercased() == q.lowercased()
-                r.score = exact ? max(p, 0.9) : p
+                // An exact hit keeps the order Spotlight.exactMatches gave it; Jev ranks everything else.
+                r.score = r.sources.contains(.exact) ? r.prior : (exact ? max(p, 0.9) : p)
                 final.append(r)
             }
             final.sort { a, b in a.score != b.score ? a.score > b.score : a.prior > b.prior }
@@ -198,7 +205,7 @@ final class SemanticSearch {
     static func looksLikeAName(_ q: String) -> Bool {
         let t = q.trimmingCharacters(in: .whitespaces)
         guard !t.contains(" ") else { return false }
-        return t.contains(".") || t.contains("_") || t.contains("-") || t.count <= 4
+        return t.contains(".") || t.contains("_") || t.contains("-") || t.contains("/") || t.count <= 4
     }
 
     // MARK: - Walk

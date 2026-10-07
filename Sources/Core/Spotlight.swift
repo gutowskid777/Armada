@@ -38,6 +38,67 @@ enum Spotlight {
         roots.filter { r in !roots.contains { o in o != r && r.hasPrefix(o + "/") } }
     }
 
+    /// Exact hits for a query that names a file outright (2026-10-07): a path ("brain/goals.md", "~/Downloads/x.pdf",
+    /// "/Users/me/a/b") or a bare file name ("goals.md", or "goals" for goals.md). A relative path is tried under the
+    /// home folder, the search roots and the usual user folders; when it exists nowhere as typed, Spotlight finds files
+    /// whose name is the last component and whose path ends with what was typed. A bare name matches the file name
+    /// exactly (1.0) or its name without extension (0.95). Shallower paths rank first on ties.
+    static func exactMatches(query: String, roots: [String], limit: Int = 8) -> [String: Double] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty, q.count <= 300 else { return [:] }
+        let isPath = q.contains("/")
+        guard isPath || !q.contains(" ") else { return [:] }
+        let fm = FileManager.default
+        let home = fm.homeDirectoryForCurrentUser.path
+        var hits: [String: Double] = [:]
+        if isPath {
+            var rel = q
+            if rel.hasPrefix("~/") { rel = home + rel.dropFirst(1) }
+            if rel.hasPrefix("./") { rel = String(rel.dropFirst(2)) }
+            while rel.hasSuffix("/") && rel.count > 1 { rel = String(rel.dropLast()) }
+            if rel.hasPrefix("/") {
+                if fm.fileExists(atPath: rel), FileSystem.isSearchable(path: rel) { hits[rel] = 1.0 }
+            } else {
+                var bases = [home] + roots
+                for sub in ["Downloads", "Documents", "Desktop", "Claude", "Claude/Cowork"] { bases.append(home + "/" + sub) }
+                for b in bases {
+                    let p = (b as NSString).appendingPathComponent(rel)
+                    if fm.fileExists(atPath: p), FileSystem.isSearchable(path: p) { hits[p] = 1.0 }
+                }
+                if hits.isEmpty {
+                    let last = (rel as NSString).lastPathComponent
+                    let suffix = "/" + rel.lowercased()
+                    for p in mdfind(["-onlyin", home, "-name", last]) where FileSystem.isSearchable(path: p) {
+                        let lp = p.lowercased()
+                        if lp.hasSuffix(suffix) { hits[p] = 1.0 }
+                        else if (lp as NSString).lastPathComponent == last.lowercased() { hits[p] = max(hits[p] ?? 0, 0.9) }
+                    }
+                }
+            }
+        } else {
+            let lq = q.lowercased()
+            for p in mdfind(["-onlyin", home, "-name", q]) where FileSystem.isSearchable(path: p) {
+                let name = (p as NSString).lastPathComponent.lowercased()
+                if name == lq { hits[p] = 1.0 }
+                else if (name as NSString).deletingPathExtension == lq { hits[p] = max(hits[p] ?? 0, 0.95) }
+            }
+        }
+        // Order: exact name before name-without-extension; then the user's own search locations in the order they
+        // were added (the home folder itself does not count, everything is under it); then shallower paths. The order
+        // is encoded in the score (1.0, 0.998, 0.996...) so the rerank keeps it: these are the user's call, not Jev's.
+        let priority = roots.filter { $0 != home && !home.hasPrefix($0 + "/") }
+        func rank(_ p: String) -> Int { priority.firstIndex { p.hasPrefix($0 + "/") } ?? priority.count }
+        let ranked = hits.sorted { a, b in
+            if a.value != b.value { return a.value > b.value }
+            let ra = rank(a.key), rb = rank(b.key)
+            if ra != rb { return ra < rb }
+            let da = a.key.split(separator: "/").count, db = b.key.split(separator: "/").count
+            if da != db { return da < db }
+            return a.key < b.key
+        }
+        return Dictionary(uniqueKeysWithValues: ranked.prefix(limit).enumerated().map { ($0.element.key, 1.0 - 0.002 * Double($0.offset)) })
+    }
+
     /// Score in 0...1 = fraction of query words found in the file name, weighted by how rare each word is.
     /// One `mdfind -name` per word, all in parallel (~60 ms total).
     static func nameMatches(query: String, roots: [String], limit: Int = 30) -> [String: Double] {
