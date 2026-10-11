@@ -7,6 +7,17 @@ Describe the file you want; Jev finds it. A Spotlight-style ⌘ Space search for
 ⌘ Space   →   "the lease for my apartment"   →   ~/Documents/Personal/Lease/lease_123_main_st.pdf   99%
 ```
 
+## What I added
+
+Armada is [strombolini](https://github.com/strombolini/Armada)'s. I use it every day and build on it:
+
+* **Clipboard history, Raycast-style (⌃⌥V).** Every copy is kept and searchable, and pasting hands focus back to the
+  app you were in so the paste lands there. **Merged into the original Armada** ([PR #1](https://github.com/strombolini/Armada/pull/1)).
+* **Exact hits first.** Type a path (`~/Downloads/x.pdf`) or a bare file name (`goals.md`) and that file is found
+  directly and shown first, before the model answers, and stays first after it reranks. Ties go to your search
+  locations in order.
+* **⌥⌘ Space hotkey option**, so Armada and the system Spotlight can live side by side.
+
 ## What it does
 
 * **⌘ Space panel** — looks and behaves like macOS 26 Spotlight: big search field, filter chips, result rows with
